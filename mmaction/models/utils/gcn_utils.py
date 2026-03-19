@@ -422,22 +422,9 @@ class mstcn(BaseModule):
 
 
 class shuffle_tcn(mstcn):
-    """Multi-scale temporal convolutional network with channel shuffle.
-
-    Extends :class:`mstcn` by applying channel shuffle after multi-branch
-    fusion to enhance cross-branch feature mixing (inspired by ShuffleNet).
-
-    Args:
-        in_channels (int): Number of input channels.
-        out_channels (int): Number of output channels.
-        groups (int): Number of channel groups for shuffle. Defaults to 2.
-        mid_channels (int): Number of middle channels. Defaults to None.
-        dropout (float): Dropout probability. Defaults to 0.
-        ms_cfg (list): Multi-scale branch config. Defaults to the same as
-            :class:`mstcn`.
-        stride (int): Stride of the temporal convolution. Defaults to 1.
-        init_cfg (dict or list[dict]): Initialization config dict.
-            Defaults to None.
+    """ Multi-scale temporal convolutional network with channel shuffle.
+        对:class:mstcn进行扩展
+        受ShuffleNet启发，在多分支branches融合之后,引入channel shuffle，增强分支之间的特征交互
     """
 
     def __init__(self,
@@ -453,14 +440,12 @@ class shuffle_tcn(mstcn):
 
     @staticmethod
     def _channel_shuffle(x: torch.Tensor, groups: int) -> torch.Tensor:
-        """Reshape → transpose → restore to shuffle channels across groups."""
         N, C, T, V = x.shape
         x = x.view(N, groups, C // groups, T, V)
         x = x.transpose(1, 2).contiguous()
         return x.view(N, C, T, V)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward with channel shuffle applied after multi-branch fusion."""
         out = self.inner_forward(x)
         out = self._channel_shuffle(out, self.groups)
         out = self.bn(out)
