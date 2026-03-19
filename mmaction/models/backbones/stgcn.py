@@ -7,7 +7,7 @@ import torch.nn as nn
 from mmengine.model import BaseModule, ModuleList
 
 from mmaction.registry import MODELS
-from ..utils import Graph, mstcn, unit_gcn, unit_tcn
+from ..utils import Graph, mstcn, shuffle_tcn, unit_gcn, unit_tcn
 
 EPS = 1e-4
 
@@ -35,6 +35,7 @@ class STGCNBlock(BaseModule):
                  init_cfg: Optional[Union[Dict, List[Dict]]] = None,
                  **kwargs) -> None:
         super().__init__(init_cfg=init_cfg)
+        self.stride = stride
 
         gcn_kwargs = {k[4:]: v for k, v in kwargs.items() if k[:4] == 'gcn_'}
         tcn_kwargs = {k[4:]: v for k, v in kwargs.items() if k[:4] == 'tcn_'}
@@ -45,7 +46,7 @@ class STGCNBlock(BaseModule):
         assert len(kwargs) == 0, f'Invalid arguments: {kwargs}'
 
         tcn_type = tcn_kwargs.pop('type', 'unit_tcn')
-        assert tcn_type in ['unit_tcn', 'mstcn']
+        assert tcn_type in ['unit_tcn', 'mstcn', 'shuffle_tcn']
         gcn_type = gcn_kwargs.pop('type', 'unit_gcn')
         assert gcn_type in ['unit_gcn']
 
@@ -56,6 +57,9 @@ class STGCNBlock(BaseModule):
                 out_channels, out_channels, 9, stride=stride, **tcn_kwargs)
         elif tcn_type == 'mstcn':
             self.tcn = mstcn(
+                out_channels, out_channels, stride=stride, **tcn_kwargs)
+        elif tcn_type == 'shuffle_tcn':
+            self.tcn = shuffle_tcn(
                 out_channels, out_channels, stride=stride, **tcn_kwargs)
         self.relu = nn.ReLU()
 

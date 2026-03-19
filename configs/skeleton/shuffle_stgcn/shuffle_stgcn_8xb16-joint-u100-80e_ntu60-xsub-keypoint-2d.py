@@ -3,7 +3,7 @@ auto_scale_lr = dict(base_batch_size=128, enable=False)
 dataset_type = 'PoseDataset'
 default_hooks = dict(
     checkpoint=dict(interval=1, save_best='auto', type='CheckpointHook'),
-    logger=dict(ignore_last=False, interval=100, type='LoggerHook'),
+    logger=dict(ignore_last=False, interval=20, type='LoggerHook'),
     param_scheduler=dict(type='ParamSchedulerHook'),
     runtime_info=dict(type='RuntimeInfoHook'),
     sampler_seed=dict(type='DistSamplerSeedHook'),
@@ -23,7 +23,7 @@ model = dict(
         gcn_adaptive='init',
         gcn_with_res=True,
         graph_cfg=dict(layout='coco', mode='spatial'),
-        tcn_type='mstcn',
+        tcn_type='shuffle_tcn',
         type='STGCN'),
     cls_head=dict(in_channels=256, num_classes=60, type='GCNHead'),
     type='RecognizerGCN')
@@ -83,7 +83,7 @@ test_pipeline = [
 train_cfg = dict(
     max_epochs=40, type='EpochBasedTrainLoop', val_begin=1, val_interval=1)
 train_dataloader = dict(
-    batch_size=128,
+    batch_size=64,
     dataset=dict(
         dataset=dict(
             ann_file=
