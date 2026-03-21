@@ -421,32 +421,109 @@ class mstcn(BaseModule):
         return self.drop(out)
 
 
-class shuffle_tcn(mstcn):
-    """ Multi-scale temporal convolutional network with channel shuffle.
-        对:class:mstcn进行扩展
-        受ShuffleNet启发，在多分支branches融合之后,引入channel shuffle，增强分支之间的特征交互
+class shuffle_tcn(BaseModule):
+    """ShuffleNetV2-style temporal convolutional network with channel split
+    and channel shuffle.
+
+    stride=1: channel split → [x_proj (直通), branch_main(x)] → concat
+    stride=2: [branch_proj(x), branch_main(x)] → concat → channel_shuffle
+              → [x_proj_, branch_main_sub(x_)] → concat
     """
 
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 groups: int = 2,
-                 **kwargs) -> None:
-        super().__init__(in_channels, out_channels, **kwargs)
-        assert out_channels % groups == 0, (
-            f'out_channels ({out_channels}) must be divisible by '
-            f'groups ({groups})')
-        self.groups = groups
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 9,
+        stride: int = 1,
+        dilation: int = 1,
+        norm: str = 'BN',
+        dropout: float = 0,
+        init_cfg: Union[Dict, List[Dict]] = [
+            dict(type='Constant', layer='BatchNorm2d', val=1),
+            dict(type='Kaiming', layer='Conv2d', mode='fan_out')
+        ]
+    ) -> None:
+        super().__init__(init_cfg=init_cfg)
 
-    @staticmethod
-    def _channel_shuffle(x: torch.Tensor, groups: int) -> torch.Tensor:
-        N, C, T, V = x.shape
-        x = x.view(N, groups, C // groups, T, V)
-        x = x.transpose(1, 2).contiguous()
-        return x.view(N, C, T, V)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.mid_channels = out_channels // 2
+        self.stride = stride
+        self.dilation = dilation
+        self.act = nn.SiLU()
+        self.drop = nn.Dropout(dropout, inplace=True)
+        self.norm_cfg = norm if isinstance(norm, dict) else dict(type=norm)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.inner_forward(x)
-        out = self._channel_shuffle(out, self.groups)
-        out = self.bn(out)
-        return self.drop(out)
+        self.branch_main = Sequential(
+            # pw
+            nn.Conv2d(self.in_channels // (3 - self.stride), self.mid_channels, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(self.mid_channels), self.act,
+
+            nn.Conv2d(
+                self.mid_channels,
+                self.mid_channels,
+                kernel_size=(3, 1),
+                stride=(stride, 1),
+                padding=(1, 0),
+                dilation=(dilation, 1),
+                groups=self.mid_channels,
+                ),
+            nn.BatchNorm2d(self.mid_channels),
+            # pw
+            nn.Conv2d(self.mid_channels, self.mid_channels, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(self.mid_channels), self.act)
+
+        if self.stride == 2:
+            self.branch_proj = Sequential(
+            nn.Conv2d(self.in_channels,
+                      self.mid_channels,
+                      kernel_size=(3, 1),
+                      stride=(2, 1),
+                      padding=(2, 0),
+                      groups=self.mid_channels,
+                      dilation=(2, 1),
+                      bias=False),
+            nn.BatchNorm2d(self.mid_channels),
+            nn.Conv2d(self.mid_channels, self.mid_channels, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(self.mid_channels), self.act,
+            )
+
+            self.branch_main_sub = Sequential(
+            nn.Conv2d(self.mid_channels, self.mid_channels, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(self.mid_channels), self.act,
+            nn.Conv2d(self.mid_channels,
+                      self.mid_channels,
+                      kernel_size=(5, 1),
+                      stride=(1, 1),
+                      padding=(2, 0),
+                      dilation=(dilation, 1),
+                      groups=self.mid_channels,
+                      ),
+            nn.BatchNorm2d(self.mid_channels),
+            # pw
+            nn.Conv2d(self.mid_channels, self.mid_channels, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(self.mid_channels), self.act)
+
+        else:
+            self.branch_proj = None
+            self.branch_main_sub = None
+
+    def forward(self, old_x: torch.Tensor) -> torch.Tensor:
+        if self.stride == 1:
+            x_proj, x = self.channel_shuffle(old_x)
+            return torch.cat((x_proj, self.branch_main(x)), 1)
+        elif self.stride == 2:
+            x_proj = old_x
+            x = old_x
+            new_x = torch.cat((self.branch_proj(x_proj), self.branch_main(x)), 1)
+            x_proj_, x_ = self.channel_shuffle(new_x)
+            return torch.cat((x_proj_, self.branch_main_sub(x_)), 1)
+
+    def channel_shuffle(self, x):
+        N, C, T, V = x.size()
+        assert (C % 4 == 0), "Channels must be divisible by 4"
+        x = x.reshape(N * C // 2, 2, T * V)
+        x = x.permute(1, 0, 2)
+        x = x.reshape(2, -1, C // 2, T, V)
+        return x[0], x[1]
