@@ -30,7 +30,7 @@ Downsample Module
 ## 开启训练
 
 ```bash
-bash shuffle_stgcn_train.sh
+./shuffle_stgcn_train.sh
 ```
 
 ## References
