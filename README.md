@@ -25,7 +25,7 @@ Downsample Module
 | 文件 | 说明 |
 |------|------|
 | `configs/skeleton/shuffle_stgcn/shuffle_stgcn.py` | 基础配置 |
-| `configs/skeleton/shuffle_stgcn/shuffle_stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py` | 完整训练配置 |
+| `configs/skeleton/shuffle_stgcn/shuffle_stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py` | 完整配置 |
 
 ## 开启训练
 
